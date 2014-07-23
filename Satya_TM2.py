@@ -21,7 +21,8 @@ rt = range(len(ret))
 ms = range(len(modstations))
 snrio = range(len(srio))
 #VARIABLES_______________________________________________________________
-x = {}              # For capacity/ (no. of modules) allocation to different stations  first and second stage xij => x of station i and stage j
+x = {}              # For capacity/ (no. of modules) allocation to different stations  first and second stage
+#xij => x of station i and stage j j is second set of decisions in the same stage as no info revealed in 2nd stage used for x2s. 
 for s in ms:
     for i in range(2):
         x[s,i] = tm2.addVar(vtype = GRB.INTEGER, name = 'x'+str(s+1)+str(i+1))
