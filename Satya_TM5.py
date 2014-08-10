@@ -1,6 +1,7 @@
 # Modular Example - Dynamic Program - uncertain demands - mean and variance known - normal
 # Coded by: Satya Malladi
-# Aug 9th 2014
+#Adding buffer variable
+# Aug 10th 2014
 from __future__ import print_function
 import os
 import csv
@@ -42,14 +43,16 @@ sal = [9,8]    # Cost retrieved upon uninstalling a module without shifting
 m = [0.2, 0.3]  # Maintenance cost of capacity every period
 lndcost = [.12,.1]  # Land use cost per period
 lostcost = [2,4,5] # Lost sales penalty
+hcost = [0.05, 0.07] # Holding cost
 cap = 40     # Module Capacity
 tm5 = Model("modular_dp1")
 #VARIABLES_______________________________________________________________
-
+bfr = {} # Number of modules retained for one of the upcoming periods
 y = {} # For capacity/ (no. of modules) at station xt_s => x of station s at epoch t
 for t in epochs:
     for s in ms:
         y[t,s] = tm5.addVar(vtype = GRB.INTEGER, lb =0, name = 'y'+str(t+1)+"_"+str(s+1))
+        bfr[t,s] = tm5.addVar(vtype = GRB.INTEGER, lb =0, name = 'bfr'+str(t+1)+"_"+str(s+1))
 ys = {} # For # of modules shifted from i to j station at epoch t : yst_ij
 for t in epochs:
     for i in ms:
@@ -80,7 +83,7 @@ u = {}   # unused capacity at station s in period t
 for t in epochs:
     for s in ms:
         u[t,s] = tm5.addVar(vtype = GRB.INTEGER, lb =0, name = 'u'+str(t+1)+"_"+str(s+1)) #ub = cap-1, 
-z = {}
+z = {}  # for max slack variable 
 for t in epochs:
     for s in ms:
         z[t,s] = tm5.addVar(vtype = GRB.INTEGER, lb =0, name = 'z'+str(t+1)+"_"+str(s+1)) #ub = cap-1, 
@@ -105,17 +108,21 @@ for t in epochs:
 ##        k+=1
 for s in ms:
     tm5.addConstr(ad[0,s]== 0, "c%d" % k)
+    k+=1
     tm5.addConstr(slvg[0,s]== 0, "c%d" % k)
-    tm5.addConstr(y[1,s]==y[0,s]-quicksum(ys[0,s,i] for i in ms)+ad[1,s]-slvg[1,s],"c%d" % k) # 4) Dyn Eq for the first period
+    k+=1
+    tm5.addConstr(bfr[T-1,s]== 0, "c%d" % k)
+    k+=1
+    tm5.addConstr(y[1,s]+bfr[1,s]==bfr[0,s]+y[0,s]-quicksum(ys[0,s,i] for i in ms)+ad[1,s]-slvg[1,s],"c%d" % k) # 4) Dyn Eq for the first period
     k+=1
     for t in range(1,T-1):     # for each station SYSTEM DYNAMICS EQN  includes [1, 2, .. ,T-1]
-        tm5.addConstr(y[t+1,s]==y[t,s]-quicksum(ys[t,s,i] for i in ms) + quicksum(ys[t-1,i,s] for i in ms)+ad[t+1,s]-slvg[t+1,s],"c%d" % k)
+        tm5.addConstr(y[t+1,s]+bfr[t+1,s]==bfr[t,s]+y[t,s]-quicksum(ys[t,s,i] for i in ms) + quicksum(ys[t-1,i,s] for i in ms)+ad[t+1,s]-slvg[t+1,s],"c%d" % k)
         k+=1
         tm5.addConstr(slvg[t,s] <= z[t,s],"c%d" % k)
         k+=1
         tm5.addConstr(z[t,s] >= y[t,s] - y[t+1,s],"c%d" % k)
         k+=1
-    tm5.addConstr(y[T-1,s]==y[T-2,s]+quicksum(ys[T-3,i,s] for i in ms) + ad[T-1,s]-slvg[T-1,s],"c%d" % k)   # Dyn Eq for the last period
+    tm5.addConstr(y[T-1,s]==bfr[T-2,s]+y[T-2,s]+quicksum(ys[T-3,i,s] for i in ms) + ad[T-1,s]-slvg[T-1,s],"c%d" % k)   # Dyn Eq for the last period
     k+=1
 #_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _      
 
@@ -129,7 +136,8 @@ cost4 = quicksum(quicksum(quicksum(shftcost[i][j]*ys[t,i,j] for i in ms)for j in
 cost5 = quicksum(quicksum(quicksum(tr[s][r]*x[t,s,r] for s in ms)for r in rt) for t in epochs) # transportation cost
 cost6 = quicksum(quicksum(lndcost[s]*lnd[t,s] for s in ms)for t in epochs)  # land use cost
 cost7 = quicksum(quicksum(lostcost[r]*lost[t,r] for r in rt)for t in epochs)  # lost sales per period
-tm5.setObjective(cost1+cost2+cost3+cost4+cost5+cost6+cost7+quicksum(quicksum(z[t,s] for s in ms) for t in epochs), GRB.MINIMIZE)
+cost8 = quicksum(quicksum(hcost[s]*bfr[t,s] for s in ms)for t in epochs)  # holding cost of buffer inventory
+tm5.setObjective(cost1+cost2+cost3+cost4+cost5+cost6+cost7+cost8, GRB.MINIMIZE)
 #OPTIMIZING______________________________________________________________
 tm5.optimize()
 tm5.write("tm5_LP.lp")
