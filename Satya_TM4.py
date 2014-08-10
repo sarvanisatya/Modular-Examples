@@ -1,6 +1,6 @@
 # Modular Example - Completely Deterministic Dynamic Program - improved
 # Coded by: Satya Malladi
-# Aug 5th 2014
+# Aug 1st 2014
 from __future__ import print_function
 import os
 import csv
@@ -13,10 +13,14 @@ modstations = ['S1', 'S2']  # Stations for modules
 with open('modular.csv', 'rb') as ex:
     d = list(csv.reader(ex, skipinitialspace=True))
     d = [i for i in d if i]
+with open('modbudget.csv', 'rb') as ex:
+    b = list(csv.reader(ex, skipinitialspace=True))
+    b = [i for i in b if i]
 T = 5     # No of periods = decision epochs T periods, T epochs. closing epoch not included
 epochs = range(T)
 for t in epochs:
     d[t] = [float(i) for i in d[t]]
+    b[t] = [float(i) for i in b[t]]
 st = 1            # No. of months for shifted capacity to become fully operational 
 tr = [[0.7,.32, 1.5],[.69, .57,0.8]]   # Transportation / logistics cost from the two stations to different customers
 setup = [14, 12]  # Setup costs at each station setup[i][j] => station j
@@ -73,6 +77,8 @@ tm4_2.update()
 #CONSTRAINTS______________________________________________________________
 k=1  # for numbering constraints
 for t in epochs:
+    tm4_2.addConstr(quicksum(m[s]*y[t,s] for s in ms) <= b[t][0], "c%d" % k) # 4) budget constraint on capacity maintenance for each period
+    k+=1
     for r in rt:      # 1) for each retailer in each period demand fulfillment
         tm4_2.addConstr(lost[t,r]+quicksum(x[t,s,r] for s in ms) == d[t][r],"c%d" % k)
         k+=1
