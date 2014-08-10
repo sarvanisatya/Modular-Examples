@@ -94,7 +94,9 @@ for t in epochs:
 ##        k+=1
 for s in ms:
     tm4_2.addConstr(ad[0,s]== 0, "c%d" % k)
+    k+=1
     tm4_2.addConstr(slvg[0,s]== 0, "c%d" % k)
+    k+=1
     tm4_2.addConstr(y[1,s]==y[0,s]-quicksum(ys[0,s,i] for i in ms)+ad[1,s]-slvg[1,s],"c%d" % k) # 4) Dyn Eq for the first period
     k+=1
     for t in range(1,T-1):     # for each station SYSTEM DYNAMICS EQN  includes [1, 2, .. ,T-1]
