@@ -22,6 +22,8 @@ with open('modbudget.csv', 'rb') as ex:
     b = list(csv.reader(ex, skipinitialspace=True))
     b = [i for i in b if i]
 T = 5     # No of periods = decision epochs T periods, T epochs. closing epoch not included
+#num_ret = len(d_mean[0])# Read from costs file eg--  num_lines = sum(1 for line in open('modmean.csv'))
+#num_epochs = len(d_mean) # = T
 epochs = range(T)
 rt = range(len(ret))
 ms = range(len(modstations))
@@ -38,12 +40,12 @@ for t in epochs:
 st = 1            # No. of months for shifted capacity to become fully operational 
 tr = [[0.7,.32, 1.5],[.69, .57,0.8]]   # Transportation / logistics cost from the two stations to different customers
 setup = [14, 12]  # Setup costs at each station setup[i][j] => station j
-shftcost = [[0,4],[5,0]]    # shftcost[i][j] shifting cost from station i to station j
+shftcost = [[0,0.8],[0.5,0]]    # shftcost[i][j] shifting cost from station i to station j
 sal = [9,8]    # Cost retrieved upon uninstalling a module without shifting
 m = [0.2, 0.3]  # Maintenance cost of capacity every period
-lndcost = [.12,.1]  # Land use cost per period
+lndcost = [.4,.3]  # Land use cost per period
 lostcost = [2,4,5] # Lost sales penalty
-hcost = [0.05, 0.07] # Holding cost
+hcost = [0.25, 0.17] # Holding cost
 cap = 40     # Module Capacity
 tm5 = Model("modular_dp1")
 #VARIABLES_______________________________________________________________
@@ -65,7 +67,10 @@ for t in epochs:
 slvg = {}
 for t in epochs:
     for s in ms:
-        slvg[t,s] = tm5.addVar(vtype = GRB.INTEGER, ub =10, name = 'slvg'+str(t+1)+"_"+str(s+1)) # set lb accly. 
+        slvg[t,s] = tm5.addVar(vtype = GRB.INTEGER, name = 'slvg'+str(t+1)+"_"+str(s+1)) # set lb accly. 
+for s in ms:
+    slvg[T,s]=tm5.addVar(vtype = GRB.INTEGER, name = 'slvg'+str(T+1)+"_"+str(s+1)) # set lb accly. 
+    y[T,s] = tm5.addVar(vtype = GRB.INTEGER, name = 'y'+str(T+1)+"_"+str(s+1))  
 x = {}           # demand flow from station s to retailer r at epoch t
 for t in epochs:
     for s in ms:
@@ -82,17 +87,15 @@ for t in epochs:
 u = {}   # unused capacity at station s in period t
 for t in epochs:
     for s in ms:
-        u[t,s] = tm5.addVar(vtype = GRB.INTEGER, lb =0, name = 'u'+str(t+1)+"_"+str(s+1)) #ub = cap-1, 
+        u[t,s] = tm5.addVar(vtype = GRB.INTEGER, lb =0, ub = cap-1, name = 'u'+str(t+1)+"_"+str(s+1)) #ub = cap-1, 
 z = {}  # for max slack variable 
 for t in epochs:
     for s in ms:
-        z[t,s] = tm5.addVar(vtype = GRB.INTEGER, lb =0, name = 'z'+str(t+1)+"_"+str(s+1)) #ub = cap-1, 
+        z[t,s] = tm5.addVar(vtype = GRB.INTEGER, lb =0, name = 'z'+str(t+1)+"_"+str(s+1))  
 tm5.update()
 #CONSTRAINTS______________________________________________________________
 k=1  # for numbering constraints
 for t in epochs:
-    tm5.addConstr(quicksum(m[s]*y[t,s] for s in ms) <= b[t][0], "c%d" % k) # 4) budget constraint on capacity maintenance for each period
-    k+=1
     for r in rt:      # 1) for each retailer in each period demand fulfillment
         tm5.addConstr(lost[t,r]+quicksum(x[t,s,r] for s in ms) == d[t,r],"c%d" % k)
         k+=1
@@ -102,7 +105,7 @@ for t in epochs:
         k+=1
         tm5.addConstr(ys[t,s,s]== 0, "c%d" % k)
         k+=1
-        tm5.addConstr(y[t,s] <= ((quicksum(d[t,r] for r in rt)/cap) + 1)*lnd[t,s], "c%d" % k) # 3) for each station's land use
+        tm5.addConstr(y[t,s] +bfr[t,s] <= ((quicksum(d[t,r] for r in rt)/cap) + 1)*lnd[t,s], "c%d" % k) # 3) Station Land Use Constraints
         k+=1
 ##        tm5.addConstr(y[t,s] >= lnd[t,s], "c%d" % k) redundant
 ##        k+=1
@@ -113,17 +116,23 @@ for s in ms:
     k+=1
     tm5.addConstr(bfr[T-1,s]== 0, "c%d" % k)
     k+=1
-    tm5.addConstr(y[1,s]+bfr[1,s]==bfr[0,s]+y[0,s]-quicksum(ys[0,s,i] for i in ms)+ad[1,s]-slvg[1,s],"c%d" % k) # 4) Dyn Eq for the first period
+    tm5.addConstr(bfr[0,s]== 0, "c%d" % k)
     k+=1
-    for t in range(1,T-1):     # for each station SYSTEM DYNAMICS EQN  includes [1, 2, .. ,T-1]
+    tm5.addConstr(y[1,s]+bfr[1,s]==bfr[0,s]+y[0,s]-quicksum(ys[0,s,i] for i in ms)+ad[1,s]-slvg[1,s],"c%d" % k) # 4a) Dyn Eq for the first period
+    k+=1
+    for t in range(1,T-1):     # 4b) for each station SYSTEM DYNAMICS EQN  includes [1, 2, .. ,T-1]
         tm5.addConstr(y[t+1,s]+bfr[t+1,s]==bfr[t,s]+y[t,s]-quicksum(ys[t,s,i] for i in ms) + quicksum(ys[t-1,i,s] for i in ms)+ad[t+1,s]-slvg[t+1,s],"c%d" % k)
         k+=1
         tm5.addConstr(slvg[t,s] <= z[t,s],"c%d" % k)
         k+=1
         tm5.addConstr(z[t,s] >= y[t,s] - y[t+1,s],"c%d" % k)
         k+=1
-    tm5.addConstr(y[T-1,s]==bfr[T-2,s]+y[T-2,s]+quicksum(ys[T-3,i,s] for i in ms) + ad[T-1,s]-slvg[T-1,s],"c%d" % k)   # Dyn Eq for the last period
+    tm5.addConstr(y[T,s]==bfr[T-1,s]+y[T-1,s]+quicksum(ys[T-2,i,s] for i in ms) -slvg[T,s],"c%d" % k)   # 4c) Dyn Eq for the last+1 period
     k+=1
+for t in epochs:
+    tm5.addConstr(quicksum(m[s]*y[t,s] for s in ms) <= b[t][0], "c%d" % k) # 5) budget constraint on capacity maintenance for each period
+    k+=1
+    
 #_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _      
 
 #OBJECTIVE________________________________________________________________
